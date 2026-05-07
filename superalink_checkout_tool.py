@@ -539,11 +539,12 @@ init(); setupPaypal();
 
 INDEX_HTML = r"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Superalink 自建付款页</title>
 <style>
-body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#f6f7f9;margin:0;padding:18px;color:#111}.wrap{max-width:680px;margin:18px auto;background:white;border-radius:16px;box-shadow:0 8px 30px rgba(0,0,0,.08);padding:22px}h2{margin-top:0}label{display:block;margin:14px 0 6px;font-weight:650}select,input{width:100%;box-sizing:border-box;padding:13px;border:1px solid #ddd;border-radius:10px;font-size:16px;background:#fff}button{margin-top:18px;width:100%;padding:14px 18px;border:0;border-radius:10px;background:#0a7cff;color:white;font-size:17px;cursor:pointer}button:disabled{opacity:.55;cursor:not-allowed}.muted{color:#666;font-size:14px;line-height:1.55}.pill{display:inline-block;background:#eef5ff;border:1px solid #cfe4ff;padding:4px 8px;border-radius:999px;font-size:13px;margin:3px 4px 3px 0}.summary{background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;padding:12px;margin-top:14px}.row{display:flex;justify-content:space-between;gap:12px;margin:6px 0}code{font-size:12px;word-break:break-all}
+body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#f6f7f9;margin:0;padding:18px;color:#111}.wrap{max-width:680px;margin:18px auto;background:white;border-radius:16px;box-shadow:0 8px 30px rgba(0,0,0,.08);padding:22px}h2{margin-top:0}label{display:block;margin:14px 0 6px;font-weight:650}select,input{width:100%;box-sizing:border-box;padding:13px;border:1px solid #ddd;border-radius:10px;font-size:16px;background:#fff}button{margin-top:18px;width:100%;padding:14px 18px;border:0;border-radius:10px;background:#0a7cff;color:white;font-size:17px;cursor:pointer}button:disabled{opacity:.55;cursor:not-allowed}.muted{color:#666;font-size:14px;line-height:1.55}.pill{display:inline-block;background:#eef5ff;border:1px solid #cfe4ff;padding:4px 8px;border-radius:999px;font-size:13px;margin:3px 4px 3px 0}.summary{background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;padding:12px;margin-top:14px}.notice{background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:12px 14px;margin:14px 0;color:#7c2d12;font-size:13px;line-height:1.6}.notice b{color:#9a3412}.row{display:flex;justify-content:space-between;gap:12px;margin:6px 0}code{font-size:12px;word-break:break-all}
 </style></head><body>
 <div class="wrap">
 <h2>Superalink 自建付款页</h2>
 <p class="muted">实现站内自选：目的地、SKU/套餐、币种都在本页选择，不需要跳去官网或粘链接。默认优惠券 <b>HAN000000</b>。</p>
+<div class="notice"><b>免责声明：</b>本站只是 Superalink eSIM 的自助下单辅助入口，商品、价格、支付、订单履约、售后与退款均以 Superalink 官方及支付服务商实际结果为准。请在付款前自行核对套餐、目的地、天数、流量、币种和最终金额；本站不保证所有支付方式在所有设备/浏览器中都可用，也不提供绕过风控或安全验证的服务。</div>
 <form id="orderForm" method="GET" action="/flow" onsubmit="btn.disabled=true;status.textContent='正在按所选 SKU / 币种创建订单...';">
 <label>目的地</label>
 <select id="country" name="country_code">
@@ -708,7 +709,7 @@ class Handler(BaseHTTPRequestHandler):
                 body = f"""<!doctype html><meta charset='utf-8'><title>Superalink 预填跳转</title>
 <script>
 try {{
-  document.cookie = 'splnk_checkout_session=' + encodeURIComponent({json.dumps(sid)}) + '; path=/; max-age=86400; SameSite=Lax; Secure';
+  document.cookie = "splnk_checkout_session={html.escape(sid)}; path=/; max-age=86400; SameSite=Lax; Secure";
   document.cookie = "NEXT_LOCALE=cn; path=/; max-age=86400; SameSite=Lax; Secure";
   localStorage.setItem('CHECKOUT_SESSION', {json.dumps(sid)});
 }} catch(e) {{}}
