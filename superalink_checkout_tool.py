@@ -709,7 +709,7 @@ class Handler(BaseHTTPRequestHandler):
                 body = f"""<!doctype html><meta charset='utf-8'><title>Superalink 预填跳转</title>
 <script>
 try {{
-  document.cookie = "splnk_checkout_session={html.escape(sid)}; path=/; max-age=86400; SameSite=Lax; Secure";
+  document.cookie = 'splnk_checkout_session=' + encodeURIComponent({json.dumps(sid)}) + '; path=/; max-age=86400; SameSite=Lax; Secure';
   document.cookie = "NEXT_LOCALE=cn; path=/; max-age=86400; SameSite=Lax; Secure";
   localStorage.setItem('CHECKOUT_SESSION', {json.dumps(sid)});
 }} catch(e) {{}}
