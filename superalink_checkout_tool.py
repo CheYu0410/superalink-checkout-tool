@@ -158,7 +158,7 @@ def sku_country_code(sku):
 
 
 DEFAULT_COUPON = "CHÊ與與0000"
-STRIPE_PK = os.environ.get("STRIPE_PK", "")
+STRIPE_PK = os.environ.get("STRIPE_PK", "pk_live_51Q0bMX04hq3VBaM2sAACNjMSrQJIqvm7ZmECsAPvV181K2OmjolRlSM0vWFMGoLtA0ZL52BYbZf39ioGYcZndUr800WD7D6cZf")
 PAYPAL_CLIENT_ID = os.environ.get("PAYPAL_CLIENT_ID", "")
 TOKENS = {}
 TOKEN_TTL = 1800
