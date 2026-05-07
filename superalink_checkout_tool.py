@@ -71,8 +71,8 @@ DISCOUNT_CAPS = {
     "IDR": {"amount": 80000, "symbol": "Rp", "decimals": 0},
 }
 
-CNY_RATES = {"THB": 0.21, "GBP": 9.15, "SGD": 5.55, "USD": 7.20, "HKD": 0.92, "TWD": 0.23, "JPY": 0.047, "CNY": 1, "EUR": 7.75, "KRW": 0.0052, "IDR": 0.00045}
-CURRENCY_SYMBOLS = {"THB": "฿", "GBP": "£", "SGD": "S$", "USD": "$", "HKD": "HK$", "TWD": "NT$", "JPY": "¥", "CNY": "¥", "EUR": "€", "KRW": "₩", "IDR": "Rp"}
+CNY_RATES = {"THB": 0.21, "GBP": 9.15, "AUD": 4.70, "SGD": 5.55, "USD": 7.20, "HKD": 0.92, "TWD": 0.23, "JPY": 0.047, "CNY": 1, "EUR": 7.75, "KRW": 0.0052, "IDR": 0.00045}
+CURRENCY_SYMBOLS = {"THB": "฿", "GBP": "£", "AUD": "A$", "SGD": "S$", "USD": "$", "HKD": "HK$", "TWD": "NT$", "JPY": "¥", "CNY": "¥", "EUR": "€", "KRW": "₩", "IDR": "Rp"}
 CURRENCY_DECIMALS = {"JPY": 0, "KRW": 0, "IDR": 0}
 
 LOCAL_REFERENCE_CURRENCIES = {
@@ -86,6 +86,8 @@ LOCAL_REFERENCE_CURRENCIES = {
     "TH": "THB",
     "SG": "SGD",
     "ID": "IDR",
+    "AU": "AUD",
+    "NZ": "AUD",
     "GB": "GBP",
     "US": "USD",
     "US_CA": "USD",
@@ -843,6 +845,23 @@ body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#f6f7f9;
   <option value="CNY">CNY 人民币</option>
   <option value="IDR">IDR 印尼盾</option>
 </select>
+<label>参考币种 / 对比币种</label>
+<select id="referenceCurrencySelect">
+  <option value="AUTO">按目的地自动</option>
+  <option value="CNY">CNY 人民币</option>
+  <option value="HKD">HKD 港币</option>
+  <option value="TWD">TWD 新台币</option>
+  <option value="JPY">JPY 日元</option>
+  <option value="KRW">KRW 韩元</option>
+  <option value="THB">THB 泰铢</option>
+  <option value="SGD">SGD 新币</option>
+  <option value="AUD">AUD 澳元</option>
+  <option value="GBP">GBP 英镑</option>
+  <option value="USD">USD 美元</option>
+  <option value="EUR">EUR 欧元</option>
+  <option value="IDR">IDR 印尼盾</option>
+</select>
+<div class="muted">默认按目的地本地币种估算，比如 TW 显示 TWD；也可以手动改成 CNY 等。</div>
 <input type="hidden" name="coupon" value="HAN000000">
 <input type="hidden" name="affiliate_code" value="HAN000000">
 <div class="summary" id="summary">正在加载官方 SKU...</div>
@@ -854,20 +873,20 @@ body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#f6f7f9;
 </form>
 </div>
 <script>
-const country=document.getElementById('country'), skuSel=document.getElementById('sku'), currency=document.getElementById('currency'), summary=document.getElementById('summary'), btn=document.getElementById('btn'), officialBtn=document.getElementById('officialBtn'), status=document.getElementById('status');
+const country=document.getElementById('country'), skuSel=document.getElementById('sku'), currency=document.getElementById('currency'), referenceCurrencySelect=document.getElementById('referenceCurrencySelect'), summary=document.getElementById('summary'), btn=document.getElementById('btn'), officialBtn=document.getElementById('officialBtn'), status=document.getElementById('status');
 let catalog=[];
 let referenceCurrency='CNY';
 function money(p,cur){return p&&p.prices&&p.prices[cur]?p.prices[cur].display:'--'}
 function finalMoney(p,cur){return p&&p.discounted_prices&&p.discounted_prices[cur]?p.discounted_prices[cur].display:money(p,cur)}
 function priceAmount(p,cur){const src=p&&p.discounted_prices&&p.discounted_prices[cur]?p.discounted_prices:p&&p.prices;return src&&src[cur]&&typeof src[cur].amount==='number'?src[cur].amount:null}
-function cnyRate(cur){const rates={THB:0.21,GBP:9.15,SGD:5.55,USD:7.20,HKD:0.92,TWD:0.23,JPY:0.047,CNY:1,EUR:7.75,KRW:0.0052,IDR:0.00045};return rates[cur]||null}
-function currencySymbol(cur){const symbols={THB:'฿',GBP:'£',SGD:'S$',USD:'$',HKD:'HK$',TWD:'NT$',JPY:'¥',CNY:'¥',EUR:'€',KRW:'₩',IDR:'Rp'};return symbols[cur]||cur+' '}
+function cnyRate(cur){const rates={THB:0.21,GBP:9.15,AUD:4.70,SGD:5.55,USD:7.20,HKD:0.92,TWD:0.23,JPY:0.047,CNY:1,EUR:7.75,KRW:0.0052,IDR:0.00045};return rates[cur]||null}
+function currencySymbol(cur){const symbols={THB:'฿',GBP:'£',AUD:'A$',SGD:'S$',USD:'$',HKD:'HK$',TWD:'NT$',JPY:'¥',CNY:'¥',EUR:'€',KRW:'₩',IDR:'Rp'};return symbols[cur]||cur+' '}
 function currencyDecimals(cur){return ['JPY','KRW','IDR'].includes(cur)?0:2}
 function formatRefMoney(v,cur){if(v==null)return '--';const d=currencyDecimals(cur);return '≈'+currencySymbol(cur)+(d===0?Math.round(v).toString():v.toFixed(d))}
 function refAmount(p,cur,refCur){const amount=priceAmount(p,cur), from=cnyRate(cur), to=cnyRate(refCur); if(amount==null||!from||!to)return null; return amount*from/to;}
-function refText(p,cur,refCur){return formatRefMoney(refAmount(p,cur,refCur),refCur)}
-function priceCompareHtml(p){const refCur=p.reference_currency||referenceCurrency||'CNY';const curList=['THB','EUR','USD','GBP','KRW','JPY','SGD','CNY','IDR'];const rows=curList.map(cur=>{const amount=priceAmount(p,cur), ref=refAmount(p,cur,refCur);return amount==null?null:{cur,display:finalMoney(p,cur),ref,discount:p.discounted_prices&&p.discounted_prices[cur]&&p.discounted_prices[cur].discountDisplay};}).filter(Boolean).sort((a,b)=>(a.ref??999999)-(b.ref??999999));const best=rows[0];const label=(p.discounted_prices&&Object.keys(p.discounted_prices).length)?`按最高折扣后统一 ${refCur} 估算对比`:`官方标价统一按 ${refCur} 估算对比`;return `<div class=muted style="margin-top:8px"><b>${label}：</b>${rows.map(r=>`<span class=pill ${best&&r.cur===best.cur?'style="background:#ecfdf5;border-color:#bbf7d0;color:#166534;font-weight:700"':''}>${r.cur} ${r.display} = ${formatRefMoney(r.ref,refCur)}${r.discount?'（减'+r.discount+'）':''}${best&&r.cur===best.cur?' 最低':''}</span>`).join('')}</div><div class=muted>参考币种按目的地自动切换：中国大陆=CNY，香港/澳门=HKD，台湾=TWD，日本=JPY，韩国=KRW，泰国=THB，新加坡=SGD，英国=GBP，美国/加拿大=USD，欧洲=EUR。折扣币种：THB减฿175、EUR减€4、USD减$5、GBP减£4、KRW减₩6750、JPY减¥775、SGD减S$6.75、CNY减¥36.25、IDR减Rp80000。汇率为前端估算，最终以官方结算页为准。</div>`}
-function bestCurrency(p){const refCur=p.reference_currency||referenceCurrency||'CNY';const rows=Object.keys(p.discounted_prices&&Object.keys(p.discounted_prices).length?p.discounted_prices:p.prices||{}).map(cur=>({cur,ref:refAmount(p,cur,refCur)})).filter(x=>x.ref!=null).sort((a,b)=>a.ref-b.ref);return rows[0]?rows[0].cur:currency.value}
+function selectedRefCurrency(p){return referenceCurrencySelect.value==='AUTO'?(p&&p.reference_currency||referenceCurrency||'CNY'):referenceCurrencySelect.value}
+function priceCompareHtml(p){const refCur=selectedRefCurrency(p);const curList=['THB','EUR','USD','GBP','KRW','JPY','SGD','CNY','IDR'];const rows=curList.map(cur=>{const amount=priceAmount(p,cur), ref=refAmount(p,cur,refCur);return amount==null?null:{cur,display:finalMoney(p,cur),ref,discount:p.discounted_prices&&p.discounted_prices[cur]&&p.discounted_prices[cur].discountDisplay};}).filter(Boolean).sort((a,b)=>(a.ref??999999)-(b.ref??999999));const best=rows[0];const label=(p.discounted_prices&&Object.keys(p.discounted_prices).length)?`按最高折扣后统一 ${refCur} 估算对比`:`官方标价统一按 ${refCur} 估算对比`;return `<div class=muted style="margin-top:8px"><b>${label}：</b>${rows.map(r=>`<span class=pill ${best&&r.cur===best.cur?'style="background:#ecfdf5;border-color:#bbf7d0;color:#166534;font-weight:700"':''}>${r.cur} ${r.display} = ${formatRefMoney(r.ref,refCur)}${r.discount?'（减'+r.discount+'）':''}${best&&r.cur===best.cur?' 最低':''}</span>`).join('')}</div><div class=muted>参考币种默认按目的地自动切换，也可在上方手动改成 CNY/HKD/TWD/JPY/AUD 等：澳洲=AUD，中国大陆=CNY，香港/澳门=HKD，台湾=TWD，日本=JPY，韩国=KRW，泰国=THB，新加坡=SGD，英国=GBP，美国/加拿大=USD，欧洲=EUR。折扣币种：THB减฿175、EUR减€4、USD减$5、GBP减£4、KRW减₩6750、JPY减¥775、SGD减S$6.75、CNY减¥36.25、IDR减Rp80000。汇率为前端估算，最终以官方结算页为准。</div>`}
+function bestCurrency(p){const refCur=selectedRefCurrency(p);const rows=Object.keys(p.discounted_prices&&Object.keys(p.discounted_prices).length?p.discounted_prices:p.prices||{}).map(cur=>({cur,ref:refAmount(p,cur,refCur)})).filter(x=>x.ref!=null).sort((a,b)=>a.ref-b.ref);return rows[0]?rows[0].cur:currency.value}
 function officialUrl(p){const slug=p.country_slug||country.value.toLowerCase().replaceAll('_','-');const q=new URLSearchParams({duration:String(p.duration_days||5),utm_source:'affiliate',affiliate_code:'HAN000000',promo:'affiliate-influencer'});return `https://www.superalink.com/cn/esim/${slug}?${q.toString()}`}
 function skuLabel(p){let opt=p.option==='UNLIMITED'?'无限':'固定'; let data=(p.data_amount||'')+(p.data_unit||''); return `${p.duration_days}天 / ${opt} / ${data} / ${p.sku}`;}
 async function loadCatalog(){btn.disabled=true; officialBtn.disabled=true; skuSel.innerHTML='<option>加载中...</option>'; summary.textContent='正在读取官方 SKU...';
@@ -877,8 +896,8 @@ async function loadCatalog(){btn.disabled=true; officialBtn.disabled=true; skuSe
     if(preferred){skuSel.value=preferred.sku; currency.value=bestCurrency(preferred);}
     updateSummary(); btn.disabled=!preferred; officialBtn.disabled=!preferred;
   }catch(e){summary.innerHTML='<span style="color:#c62828">加载 SKU 失败：'+e.message+'</span>'; skuSel.innerHTML='';}}
-function updateSummary(){const p=catalog.find(x=>x.sku===skuSel.value); if(!p){summary.textContent='请选择 SKU'; btn.disabled=true; officialBtn.disabled=true; return;} skuSel.querySelectorAll('option').forEach(o=>{const pp=catalog.find(x=>x.sku===o.value); if(pp)o.textContent=skuLabel(pp)+' · '+finalMoney(pp,bestCurrency(pp))}); const best=bestCurrency(p); const url=officialUrl(p); const refCur=p.reference_currency||referenceCurrency||'CNY'; summary.innerHTML=`<div class=row><span>SKU</span><b><code>${p.sku}</code></b></div><div class=row><span>套餐</span><b>${skuLabel(p).split(' / '+p.sku)[0]}</b></div><div class=row><span>参考币种</span><b>${refCur}（按目的地自动切换）</b></div><div class=row><span>系统推荐币种</span><b>${best} ${best===currency.value?'已选择':'（点击套餐后已自动优先选择）'}</b></div><div class=row><span>当前选择币种</span><b>${currency.value}</b></div><div class=row><span>${(p.discounted_prices&&p.discounted_prices[currency.value])?'预估折后金额':'官方标价'}</span><b>${finalMoney(p,currency.value)} <span class=muted>${refText(p,currency.value,refCur)}</span></b></div>${priceCompareHtml(p)}<div class=muted>优惠券 HAN000000 会在创建订单/官方页面时应用。可选择本站创建自建付款页，也可直接跳官方产品结算页。</div><div class=muted>官方直达：<a href="${url}" target="_blank" rel="noopener">${url}</a></div>`; officialBtn.onclick=()=>{window.open(url,'_blank','noopener')}; btn.disabled=false; officialBtn.disabled=false;}
-country.addEventListener('change',loadCatalog); skuSel.addEventListener('change',()=>{const p=catalog.find(x=>x.sku===skuSel.value); if(p) currency.value=bestCurrency(p); updateSummary();}); currency.addEventListener('change',updateSummary); loadCatalog();
+function updateSummary(){const p=catalog.find(x=>x.sku===skuSel.value); if(!p){summary.textContent='请选择 SKU'; btn.disabled=true; officialBtn.disabled=true; return;} skuSel.querySelectorAll('option').forEach(o=>{const pp=catalog.find(x=>x.sku===o.value); if(pp)o.textContent=skuLabel(pp)+' · '+finalMoney(pp,bestCurrency(pp))}); const best=bestCurrency(p); const url=officialUrl(p); const refCur=selectedRefCurrency(p); const refMode=referenceCurrencySelect.value==='AUTO'?'按目的地自动':'手动指定'; summary.innerHTML=`<div class=row><span>SKU</span><b><code>${p.sku}</code></b></div><div class=row><span>套餐</span><b>${skuLabel(p).split(' / '+p.sku)[0]}</b></div><div class=row><span>参考币种</span><b>${refCur}（${refMode}）</b></div><div class=row><span>系统推荐币种</span><b>${best} ${best===currency.value?'已选择':'（点击套餐后已自动优先选择）'}</b></div><div class=row><span>当前选择币种</span><b>${currency.value}</b></div><div class=row><span>${(p.discounted_prices&&p.discounted_prices[currency.value])?'预估折后金额':'官方标价'}</span><b>${finalMoney(p,currency.value)} <span class=muted>${formatRefMoney(refAmount(p,currency.value,refCur),refCur)}</span></b></div>${priceCompareHtml(p)}<div class=muted>优惠券 HAN000000 会在创建订单/官方页面时应用。可选择本站创建自建付款页，也可直接跳官方产品结算页。</div><div class=muted>官方直达：<a href="${url}" target="_blank" rel="noopener">${url}</a></div><div class=notice style="margin-top:10px"><b>官方页优惠提示：</b>如果直达官方页面后价格没有自动折扣，可在付款时手动填写优惠券 <b>HAN000000</b>；也可以先点一下官网首页弹窗领券：<a href="https://www.superalink.com/destination/aff/HAN000000" target="_blank" rel="noopener">https://www.superalink.com/destination/aff/HAN000000</a></div>`; officialBtn.onclick=()=>{window.open(url,'_blank','noopener')}; btn.disabled=false; officialBtn.disabled=false;}
+country.addEventListener('change',loadCatalog); skuSel.addEventListener('change',()=>{const p=catalog.find(x=>x.sku===skuSel.value); if(p) currency.value=bestCurrency(p); updateSummary();}); currency.addEventListener('change',updateSummary); referenceCurrencySelect.addEventListener('change',()=>{const p=catalog.find(x=>x.sku===skuSel.value); if(p) currency.value=bestCurrency(p); updateSummary();}); loadCatalog();
 </script></body></html>"""
 
 
