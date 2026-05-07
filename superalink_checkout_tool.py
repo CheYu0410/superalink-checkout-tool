@@ -247,19 +247,30 @@ def product_data_amount(product):
     return data.get("amount"), data.get("unit")
 
 
-def storefront_visible_product(product):
-    """Keep only the simplified storefront choices the official product page exposes.
+STORE_FRONT_5GB_DAYS_BY_COUNTRY = {
+    "CN": (5, 6, 7, 10, 12, 15, 20, 30),
+    "JP": (5, 6, 7, 10, 12, 15, 20, 30),
+    "TH": (6, 7, 10, 12, 15, 20, 30),
+    "MY": (6, 7, 10, 12, 15, 20, 30),
+}
+DEFAULT_STORE_FRONT_5GB_DAYS = (5, 6, 7, 10, 12, 15, 20, 30)
 
-    The raw API contains many hidden/deep SKU combinations. On the CN storefront
-    offer, the visible plan family is daily 5GB unlimited for 5-30 days.
+
+def storefront_visible_product(product, country_code=None):
+    """Keep only discount-eligible simplified storefront SKU choices.
+
+    The raw API contains hidden/deep SKU combinations. The official frontend
+    exposes a smaller daily 5GB unlimited family; some destinations start at 6
+    days rather than 5 days for the discount-eligible family.
     """
     amount, unit = product_data_amount(product)
     days = duration_days(product)
+    allowed_days = STORE_FRONT_5GB_DAYS_BY_COUNTRY.get(str(country_code or "").upper(), DEFAULT_STORE_FRONT_5GB_DAYS)
     return (
         product.get("dataPlan", {}).get("option") == "UNLIMITED"
         and float(amount or 0) == 5
         and str(unit).upper() == "GB"
-        and days in (5, 6, 7, 10, 12, 15, 20, 30)
+        and days in allowed_days
     )
 
 
@@ -281,7 +292,7 @@ def catalog_for_country(country_code):
         products.extend(g.get("products", []))
     out = []
     for p in products:
-        if not storefront_visible_product(p):
+        if not storefront_visible_product(p, country_code):
             continue
         amount, unit = product_data_amount(p)
         discounted = cap_discounted_prices(p)
