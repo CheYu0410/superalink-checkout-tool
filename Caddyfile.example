@@ -1,0 +1,29 @@
+supera.onlypast.com {
+    @tool path / /.well-known/apple-developer-merchantid-domain-association /api/* /flow /go /bridge /cn/api/* /en/api/* /zh/api/* /th/api/* /id/api/* /jp/api/* /_next/*
+    reverse_proxy @tool 127.0.0.1:53333
+
+    @storefront path /storefront-api/*
+    handle @storefront {
+        uri strip_prefix /storefront-api
+        reverse_proxy https://storefront.api.superalink.com {
+            header_up Host storefront.api.superalink.com
+            header_up Origin https://www.superalink.com
+            header_up Referer https://www.superalink.com/
+            header_up X-Forwarded-Host www.superalink.com
+            header_down Access-Control-Allow-Origin https://supera.onlypast.com
+            header_down Access-Control-Allow-Credentials true
+            transport http { tls }
+        }
+    }
+
+    @superalink path /checkout/* /cn/* /en/* /zh/* /th/* /id/* /jp/* /assets/* /favicon.ico
+    reverse_proxy @superalink https://www.superalink.com {
+        header_up Host www.superalink.com
+        header_up X-Forwarded-Host www.superalink.com
+        header_down -content-security-policy
+        header_down -Content-Security-Policy
+        transport http { tls }
+    }
+
+    reverse_proxy 127.0.0.1:53333
+}
