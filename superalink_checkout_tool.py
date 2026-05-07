@@ -63,6 +63,7 @@ DISCOUNT_CAPS = {
     "THB": {"amount": 175, "symbol": "฿", "decimals": 2},
     "EUR": {"amount": 4, "symbol": "€", "decimals": 2},
     "USD": {"amount": 5, "symbol": "$", "decimals": 2},
+    "GBP": {"amount": 4, "symbol": "£", "decimals": 2},
     "KRW": {"amount": 6750, "symbol": "₩", "decimals": 0},
     "JPY": {"amount": 775, "symbol": "¥", "decimals": 0},
     "SGD": {"amount": 6.75, "symbol": "S$", "decimals": 2},
@@ -813,6 +814,7 @@ body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#f6f7f9;
   <option value="THB">THB 泰铢</option>
   <option value="EUR">EUR 欧元</option>
   <option value="USD">USD 美元</option>
+  <option value="GBP">GBP 英镑</option>
   <option value="KRW">KRW 韩元</option>
   <option value="JPY">JPY 日元</option>
   <option value="SGD">SGD 新币</option>
@@ -838,7 +840,7 @@ function priceAmount(p,cur){const src=p&&p.discounted_prices&&p.discounted_price
 function cnyRate(cur){const rates={THB:0.21,GBP:9.15,SGD:5.55,USD:7.20,HKD:0.92,JPY:0.047,CNY:1,EUR:7.75,KRW:0.0052,IDR:0.00045};return rates[cur]||null}
 function approxCny(p,cur){const amount=priceAmount(p,cur), rate=cnyRate(cur); if(amount==null||!rate)return null; return amount*rate;}
 function cnyText(v){return v==null?'--':'≈¥'+v.toFixed(2)}
-function priceCompareHtml(p){const curList=['THB','EUR','USD','KRW','JPY','SGD','CNY','IDR'];const rows=curList.map(cur=>{const amount=priceAmount(p,cur), cny=approxCny(p,cur);return amount==null?null:{cur,display:finalMoney(p,cur),cny,discount:p.discounted_prices&&p.discounted_prices[cur]&&p.discounted_prices[cur].discountDisplay};}).filter(Boolean).sort((a,b)=>(a.cny??999999)-(b.cny??999999));const best=rows[0];const label=(p.discounted_prices&&Object.keys(p.discounted_prices).length)?'按最高折扣后统一 CNY 估算对比':'官方标价统一按 CNY 估算对比';return `<div class=muted style="margin-top:8px"><b>${label}：</b>${rows.map(r=>`<span class=pill ${best&&r.cur===best.cur?'style="background:#ecfdf5;border-color:#bbf7d0;color:#166534;font-weight:700"':''}>${r.cur} ${r.display} = ${cnyText(r.cny)}${r.discount?'（减'+r.discount+'）':''}${best&&r.cur===best.cur?' 最低':''}</span>`).join('')}</div><div class=muted>仅显示当前优惠券支持折扣的币种：THB减฿175、EUR减€4、USD减$5、KRW减₩6750、JPY减¥775、SGD减S$6.75、CNY减¥36.25、IDR减Rp80000。汇率为前端估算，最终以官方结算页为准。</div>`}
+function priceCompareHtml(p){const curList=['THB','EUR','USD','GBP','KRW','JPY','SGD','CNY','IDR'];const rows=curList.map(cur=>{const amount=priceAmount(p,cur), cny=approxCny(p,cur);return amount==null?null:{cur,display:finalMoney(p,cur),cny,discount:p.discounted_prices&&p.discounted_prices[cur]&&p.discounted_prices[cur].discountDisplay};}).filter(Boolean).sort((a,b)=>(a.cny??999999)-(b.cny??999999));const best=rows[0];const label=(p.discounted_prices&&Object.keys(p.discounted_prices).length)?'按最高折扣后统一 CNY 估算对比':'官方标价统一按 CNY 估算对比';return `<div class=muted style="margin-top:8px"><b>${label}：</b>${rows.map(r=>`<span class=pill ${best&&r.cur===best.cur?'style="background:#ecfdf5;border-color:#bbf7d0;color:#166534;font-weight:700"':''}>${r.cur} ${r.display} = ${cnyText(r.cny)}${r.discount?'（减'+r.discount+'）':''}${best&&r.cur===best.cur?' 最低':''}</span>`).join('')}</div><div class=muted>仅显示当前优惠券支持折扣的币种：THB减฿175、EUR减€4、USD减$5、GBP减£4、KRW减₩6750、JPY减¥775、SGD减S$6.75、CNY减¥36.25、IDR减Rp80000。汇率为前端估算，最终以官方结算页为准。</div>`}
 function bestCurrency(p){const rows=Object.keys(p.discounted_prices&&Object.keys(p.discounted_prices).length?p.discounted_prices:p.prices||{}).map(cur=>({cur,cny:approxCny(p,cur)})).filter(x=>x.cny!=null).sort((a,b)=>a.cny-b.cny);return rows[0]?rows[0].cur:currency.value}
 function officialUrl(p){const slug=p.country_slug||country.value.toLowerCase().replaceAll('_','-');const q=new URLSearchParams({duration:String(p.duration_days||5),utm_source:'affiliate',affiliate_code:'HAN000000',promo:'affiliate-influencer'});return `https://www.superalink.com/cn/esim/${slug}?${q.toString()}`}
 function skuLabel(p){let opt=p.option==='UNLIMITED'?'无限':'固定'; let data=(p.data_amount||'')+(p.data_unit||''); return `${p.duration_days}天 / ${opt} / ${data} / ${p.sku}`;}
