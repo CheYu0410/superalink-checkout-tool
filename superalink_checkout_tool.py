@@ -39,6 +39,76 @@ DEST_SLUGS = {
     "united-kingdom": "GB",
 }
 
+COUNTRY_SLUGS = {v: k for k, v in DEST_SLUGS.items()}
+COUNTRY_SLUGS.update({
+    "AU": "australia",
+    "NZ": "new-zealand",
+    "US": "united-states",
+    "GB": "united-kingdom",
+    "HK": "hong-kong",
+    "MO": "macau",
+    "SG": "singapore",
+    "JP": "japan",
+    "KR": "south-korea",
+    "TH": "thailand",
+    "MY": "malaysia",
+    "ID": "indonesia",
+    "VN": "vietnam",
+    "PH": "philippines",
+    "TW": "taiwan",
+    "CN": "china-mainland",
+})
+
+DISCOUNT_CAPS = {
+    "THB": {"amount": 175, "symbol": "฿", "decimals": 2},
+    "EUR": {"amount": 4, "symbol": "€", "decimals": 2},
+    "USD": {"amount": 5, "symbol": "$", "decimals": 2},
+    "KRW": {"amount": 6750, "symbol": "₩", "decimals": 0},
+    "JPY": {"amount": 775, "symbol": "¥", "decimals": 0},
+    "SGD": {"amount": 6.75, "symbol": "S$", "decimals": 2},
+    "CNY": {"amount": 36.25, "symbol": "¥", "decimals": 2},
+    "IDR": {"amount": 80000, "symbol": "Rp", "decimals": 0},
+}
+
+CNY_RATES = {"THB": 0.21, "GBP": 9.15, "SGD": 5.55, "USD": 7.20, "HKD": 0.92, "JPY": 0.047, "CNY": 1, "EUR": 7.75, "KRW": 0.0052, "IDR": 0.00045}
+CURRENCY_SYMBOLS = {"THB": "฿", "GBP": "£", "SGD": "S$", "USD": "$", "HKD": "HK$", "JPY": "¥", "CNY": "¥", "EUR": "€", "KRW": "₩", "IDR": "Rp"}
+CURRENCY_DECIMALS = {"JPY": 0, "KRW": 0, "IDR": 0}
+
+def country_slug(country_code):
+    cc = (country_code or DEFAULT_COUNTRY_CODE).upper()
+    return COUNTRY_SLUGS.get(cc) or cc.lower().replace("_", "-")
+
+def format_price(currency, amount):
+    decimals = CURRENCY_DECIMALS.get(currency, 2)
+    symbol = CURRENCY_SYMBOLS.get(currency, currency + " ")
+    if amount is None:
+        return "--"
+    if decimals == 0:
+        return f"{symbol}{int(round(amount))}"
+    return f"{symbol}{amount:.2f}"
+
+def cap_discounted_prices(product):
+    prices = product.get("price", {}) or {}
+    out = {}
+    for cur, p in prices.items():
+        amount = p.get("amount") if isinstance(p, dict) else None
+        if amount is None:
+            continue
+        cap = (DISCOUNT_CAPS.get(cur) or {}).get("amount", 0)
+        final = max(0, round(float(amount) - float(cap), 2))
+        decimals = p.get("decimals", CURRENCY_DECIMALS.get(cur, 2)) if isinstance(p, dict) else CURRENCY_DECIMALS.get(cur, 2)
+        out[cur] = {
+            "amount": int(round(final)) if decimals == 0 else final,
+            "symbol": (DISCOUNT_CAPS.get(cur) or {}).get("symbol") or p.get("symbol") or CURRENCY_SYMBOLS.get(cur, cur),
+            "inUse": bool(p.get("inUse")) if isinstance(p, dict) else False,
+            "decimals": decimals,
+            "display": format_price(cur, final),
+            "formattedAmount": str(int(round(final))) if decimals == 0 else f"{final:.2f}",
+            "discountCap": cap,
+            "discountDisplay": format_price(cur, cap),
+        }
+    return out
+
 
 def country_code_from_url(page_url):
     p = urlparse(page_url or "")
@@ -152,31 +222,7 @@ def product_data_amount(product):
 
 
 def discounted_price_for_product(product, currency, coupon=DEFAULT_COUPON):
-    """Create a throwaway checkout to read coupon-applied final price.
-
-    The response is used only for public amount comparison; identifiers/sessions are
-    discarded and never returned to the browser.
-    """
-    try:
-        sess = requests.Session()
-        headers = page_headers(DEFAULT_URL, DEFAULT_LOCALE)
-        payload = {"sku": product["sku"], "qty": 1, "currency": currency, "isExtension": False}
-        if coupon:
-            payload["coupon"] = coupon
-        r = sess.post(f"{STORE}/v2/checkout", json=payload, headers=headers, timeout=20)
-        if r.status_code >= 400:
-            return None
-        order = r.json().get("order") or {}
-        order_id = order.get("uniqueId")
-        buyer_session_id = (order.get("buyer") or {}).get("sessionID")
-        if not order_id or not buyer_session_id:
-            return None
-        bind_session_cookies(sess, buyer_session_id, DEFAULT_LOCALE)
-        intents = get_intents(sess, headers, order_id)
-        stripe = next((i for i in intents if i.get("methodIdentifier") == "stripe"), None)
-        return active_price_from_intent(stripe, currency)
-    except Exception:
-        return None
+    return (cap_discounted_prices(product) or {}).get(currency)
 
 
 def catalog_for_country(country_code):
@@ -194,12 +240,7 @@ def catalog_for_country(country_code):
     out = []
     for p in products:
         amount, unit = product_data_amount(p)
-        discounted = {}
-        if p.get("sku") == DEFAULT_SKU:
-            for cur in ("THB", "GBP", "SGD", "CNY", "HKD", "USD", "JPY"):
-                price = discounted_price_for_product(p, cur)
-                if price:
-                    discounted[cur] = price
+        discounted = cap_discounted_prices(p)
         out.append({
             "sku": p.get("sku"),
             "kind": p.get("kind"),
@@ -209,6 +250,7 @@ def catalog_for_country(country_code):
             "data_unit": unit,
             "prices": p.get("price", {}),
             "discounted_prices": discounted,
+            "country_slug": country_slug(country_code),
         })
     out.sort(key=lambda x: (x.get("duration_days") or 9999, x.get("option") or "", x.get("sku") or ""))
     return out
@@ -759,29 +801,35 @@ body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#f6f7f9;
 <input type="hidden" name="coupon" value="HAN000000">
 <input type="hidden" name="affiliate_code" value="HAN000000">
 <div class="summary" id="summary">正在加载官方 SKU...</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
 <button id="btn" type="submit" disabled>创建自建付款页</button>
+<button id="officialBtn" type="button" disabled style="background:#111827">直接去官方结算页</button>
+</div>
 <div id="status" class="muted"></div>
 </form>
 </div>
 <script>
-const country=document.getElementById('country'), skuSel=document.getElementById('sku'), currency=document.getElementById('currency'), summary=document.getElementById('summary'), btn=document.getElementById('btn'), status=document.getElementById('status');
+const country=document.getElementById('country'), skuSel=document.getElementById('sku'), currency=document.getElementById('currency'), summary=document.getElementById('summary'), btn=document.getElementById('btn'), officialBtn=document.getElementById('officialBtn'), status=document.getElementById('status');
 let catalog=[];
 function money(p,cur){return p&&p.prices&&p.prices[cur]?p.prices[cur].display:'--'}
 function finalMoney(p,cur){return p&&p.discounted_prices&&p.discounted_prices[cur]?p.discounted_prices[cur].display:money(p,cur)}
 function priceAmount(p,cur){const src=p&&p.discounted_prices&&p.discounted_prices[cur]?p.discounted_prices:p&&p.prices;return src&&src[cur]&&typeof src[cur].amount==='number'?src[cur].amount:null}
-function cnyRate(cur){const rates={THB:0.21,GBP:9.15,SGD:5.55,USD:7.20,HKD:0.92,JPY:0.047,CNY:1};return rates[cur]||null}
+function cnyRate(cur){const rates={THB:0.21,GBP:9.15,SGD:5.55,USD:7.20,HKD:0.92,JPY:0.047,CNY:1,EUR:7.75,KRW:0.0052,IDR:0.00045};return rates[cur]||null}
 function approxCny(p,cur){const amount=priceAmount(p,cur), rate=cnyRate(cur); if(amount==null||!rate)return null; return amount*rate;}
 function cnyText(v){return v==null?'--':'≈¥'+v.toFixed(2)}
-function priceCompareHtml(p){const curList=['THB','GBP','SGD','CNY','HKD','USD','JPY'];const rows=curList.map(cur=>{const amount=priceAmount(p,cur), cny=approxCny(p,cur);return amount==null?null:{cur,display:finalMoney(p,cur),cny};}).filter(Boolean).sort((a,b)=>(a.cny??999999)-(b.cny??999999));const best=rows[0];const label=(p.discounted_prices&&Object.keys(p.discounted_prices).length)?'优惠后统一按 CNY 估算对比':'官方标价统一按 CNY 估算对比';return `<div class=muted style="margin-top:8px"><b>${label}：</b>${rows.map(r=>`<span class=pill ${best&&r.cur===best.cur?'style="background:#ecfdf5;border-color:#bbf7d0;color:#166534;font-weight:700"':''}>${r.cur} ${r.display} = ${cnyText(r.cny)}${best&&r.cur===best.cur?' 最低':''}</span>`).join('')}</div><div class=muted>汇率为前端估算，用于选择币种前快速比较；最终扣款和优惠后金额以付款页/官方接口显示为准。例如 25THB≈¥5.25，0.65GBP≈¥5.95。</div>`}
+function priceCompareHtml(p){const curList=['THB','EUR','USD','KRW','JPY','SGD','CNY','IDR','GBP','HKD'];const rows=curList.map(cur=>{const amount=priceAmount(p,cur), cny=approxCny(p,cur);return amount==null?null:{cur,display:finalMoney(p,cur),cny,discount:p.discounted_prices&&p.discounted_prices[cur]&&p.discounted_prices[cur].discountDisplay};}).filter(Boolean).sort((a,b)=>(a.cny??999999)-(b.cny??999999));const best=rows[0];const label=(p.discounted_prices&&Object.keys(p.discounted_prices).length)?'按最高折扣后统一 CNY 估算对比':'官方标价统一按 CNY 估算对比';return `<div class=muted style="margin-top:8px"><b>${label}：</b>${rows.map(r=>`<span class=pill ${best&&r.cur===best.cur?'style="background:#ecfdf5;border-color:#bbf7d0;color:#166534;font-weight:700"':''}>${r.cur} ${r.display} = ${cnyText(r.cny)}${r.discount?'（减'+r.discount+'）':''}${best&&r.cur===best.cur?' 最低':''}</span>`).join('')}</div><div class=muted>已按各币种最高折扣预估：THB减฿175、EUR减€4、USD减$5、KRW减₩6750、JPY减¥775、SGD减S$6.75、CNY减¥36.25、IDR减Rp80000。汇率为前端估算，最终以官方结算页为准。</div>`}
+function bestCurrency(p){const rows=Object.keys(p.discounted_prices&&Object.keys(p.discounted_prices).length?p.discounted_prices:p.prices||{}).map(cur=>({cur,cny:approxCny(p,cur)})).filter(x=>x.cny!=null).sort((a,b)=>a.cny-b.cny);return rows[0]?rows[0].cur:currency.value}
+function officialUrl(p){const slug=p.country_slug||country.value.toLowerCase().replaceAll('_','-');const q=new URLSearchParams({duration:String(p.duration_days||5),utm_source:'affiliate',affiliate_code:'HAN000000',promo:'affiliate-influencer'});return `https://www.superalink.com/cn/esim/${slug}?${q.toString()}`}
 function skuLabel(p){let opt=p.option==='UNLIMITED'?'无限':'固定'; let data=(p.data_amount||'')+(p.data_unit||''); return `${p.duration_days}天 / ${opt} / ${data} / ${p.sku}`;}
-async function loadCatalog(){btn.disabled=true; skuSel.innerHTML='<option>加载中...</option>'; summary.textContent='正在读取官方 SKU...';
+async function loadCatalog(){btn.disabled=true; officialBtn.disabled=true; skuSel.innerHTML='<option>加载中...</option>'; summary.textContent='正在读取官方 SKU...';
   try{let r=await fetch('/api/catalog?country_code='+encodeURIComponent(country.value)); let j=await r.json(); if(!j.ok) throw new Error(j.error||'catalog failed'); catalog=j.products||[]; skuSel.innerHTML='';
-    for(const p of catalog){let o=document.createElement('option'); o.value=p.sku; o.textContent=skuLabel(p)+' · '+money(p,currency.value); skuSel.appendChild(o)}
+    for(const p of catalog){let o=document.createElement('option'); o.value=p.sku; o.textContent=skuLabel(p)+' · '+finalMoney(p,bestCurrency(p)); skuSel.appendChild(o)}
     let preferred=catalog.find(p=>p.sku==='CN-5GB_UNLIMITED-5GB-5-DAYS')||catalog.find(p=>p.option==='UNLIMITED'&&p.duration_days===5&&p.data_amount===5&&p.data_unit==='GB')||catalog[0];
-    if(preferred) skuSel.value=preferred.sku; updateSummary(); btn.disabled=!preferred;
+    if(preferred){skuSel.value=preferred.sku; currency.value=bestCurrency(preferred);}
+    updateSummary(); btn.disabled=!preferred; officialBtn.disabled=!preferred;
   }catch(e){summary.innerHTML='<span style="color:#c62828">加载 SKU 失败：'+e.message+'</span>'; skuSel.innerHTML='';}}
-function updateSummary(){const p=catalog.find(x=>x.sku===skuSel.value); if(!p){summary.textContent='请选择 SKU'; return;} skuSel.querySelectorAll('option').forEach(o=>{const pp=catalog.find(x=>x.sku===o.value); if(pp)o.textContent=skuLabel(pp)+' · '+finalMoney(pp,currency.value)}); summary.innerHTML=`<div class=row><span>SKU</span><b><code>${p.sku}</code></b></div><div class=row><span>套餐</span><b>${skuLabel(p).split(' / '+p.sku)[0]}</b></div><div class=row><span>当前选择币种</span><b>${currency.value}</b></div><div class=row><span>${(p.discounted_prices&&p.discounted_prices[currency.value])?'优惠后金额':'官方标价'}</span><b>${finalMoney(p,currency.value)} <span class=muted>${cnyText(approxCny(p,currency.value))}</span></b></div>${priceCompareHtml(p)}<div class=muted>优惠券 HAN000000 会在创建订单时应用，最终应付以付款页显示为准。</div>`;}
-country.addEventListener('change',loadCatalog); skuSel.addEventListener('change',updateSummary); currency.addEventListener('change',updateSummary); loadCatalog();
+function updateSummary(){const p=catalog.find(x=>x.sku===skuSel.value); if(!p){summary.textContent='请选择 SKU'; btn.disabled=true; officialBtn.disabled=true; return;} skuSel.querySelectorAll('option').forEach(o=>{const pp=catalog.find(x=>x.sku===o.value); if(pp)o.textContent=skuLabel(pp)+' · '+finalMoney(pp,bestCurrency(pp))}); const best=bestCurrency(p); const url=officialUrl(p); summary.innerHTML=`<div class=row><span>SKU</span><b><code>${p.sku}</code></b></div><div class=row><span>套餐</span><b>${skuLabel(p).split(' / '+p.sku)[0]}</b></div><div class=row><span>系统推荐币种</span><b>${best} ${best===currency.value?'已选择':'（点击套餐后已自动优先选择）'}</b></div><div class=row><span>当前选择币种</span><b>${currency.value}</b></div><div class=row><span>${(p.discounted_prices&&p.discounted_prices[currency.value])?'预估折后金额':'官方标价'}</span><b>${finalMoney(p,currency.value)} <span class=muted>${cnyText(approxCny(p,currency.value))}</span></b></div>${priceCompareHtml(p)}<div class=muted>优惠券 HAN000000 会在创建订单/官方页面时应用。可选择本站创建自建付款页，也可直接跳官方产品结算页。</div><div class=muted>官方直达：<a href="${url}" target="_blank" rel="noopener">${url}</a></div>`; officialBtn.onclick=()=>{window.open(url,'_blank','noopener')}; btn.disabled=false; officialBtn.disabled=false;}
+country.addEventListener('change',loadCatalog); skuSel.addEventListener('change',()=>{const p=catalog.find(x=>x.sku===skuSel.value); if(p) currency.value=bestCurrency(p); updateSummary();}); currency.addEventListener('change',updateSummary); loadCatalog();
 </script></body></html>"""
 
 
