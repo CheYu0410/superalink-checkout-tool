@@ -248,12 +248,54 @@ def product_data_amount(product):
 
 
 STORE_FRONT_5GB_DAYS_BY_COUNTRY = {
-    "CN": (5, 6, 7, 10, 12, 15, 20, 30),
-    "JP": (5, 6, 7, 10, 12, 15, 20, 30),
+    # Checked against the 43 regions shown on the affiliate storefront and the
+    # official product frontend/API 5GB unlimited family. Keep only the standard
+    # discount-facing durations; raw API also exposes hidden 1-4 day and low-data SKUs.
     "TH": (6, 7, 10, 12, 15, 20, 30),
+    "SG": (5, 6, 7, 10, 12, 15, 20, 30),
+    "VN": (5, 7, 10, 12, 15, 20, 30),
+    "JP": (5, 6, 7, 10, 12, 15, 20, 30),
     "MY": (6, 7, 10, 12, 15, 20, 30),
+    "PH": (5, 7, 10, 12, 15, 20, 30),
+    "ID": (5, 7, 10, 12, 15, 20, 30),
+    "TW": (5, 7, 10, 12, 15, 20, 30),
+    "KR": (5, 6, 7, 10, 12, 15, 20, 30),
+    "AP": (5, 7, 10, 12, 15, 20, 30),
+    "KR_JP": (5, 6, 7, 10, 12, 15, 20, 30),
+    "CN": (5, 6, 7, 10, 12, 15, 20, 30),
+    "CH": (5, 7, 10, 12, 15, 20, 30),
+    "AE": (5, 7, 10, 12, 15, 20, 30),
+    "MX": (5, 6, 7, 10, 12, 15, 20, 30),
+    "US": (5, 6, 7, 10, 12, 15, 20, 30),
+    "CA": (5, 6, 7, 10, 12, 15, 20, 30),
+    "SA": (5, 6, 7, 10, 12, 15, 20, 30),
+    "DE": (5, 7, 10, 12, 15, 20, 30),
+    "AU": (5, 6, 7, 10, 12, 15, 20, 30),
+    "EG": (5, 7, 10, 12, 15, 20, 30),
+    "ES": (5, 7, 10, 12, 15, 20, 30),
+    "FR": (5, 7, 10, 12, 15, 20, 30),
+    "GU": (5, 7, 10, 12, 15, 20, 30),
+    "GU_MP": (5, 7, 10, 12, 15, 20, 30),
+    "DK": (5, 7, 10, 12, 15, 20, 30),
+    "HK_MO": (5, 7, 10, 12, 15, 20, 30),
+    "IT": (5, 7, 10, 12, 15, 20, 30),
+    "KH": (5, 7, 10, 12, 15, 20, 30),
+    "MN": (5, 7, 10, 12, 15, 20, 30),
+    "MO": (5, 7, 10, 12, 15, 20, 30),
+    "GB": (5, 7, 10, 12, 15, 20, 30),
+    "PT": (5, 7, 10, 12, 15, 20, 30),
+    "SE": (5, 7, 10, 12, 15, 20, 30),
+    "TR": (5, 7, 10, 12, 15, 20, 30),
+    "US_CA": (5, 7, 10, 12, 15, 20, 30),
+    "ZA": (5, 7, 10, 12, 15, 20, 30),
+    "MT": (5, 7, 10, 12, 15, 20, 30),
+    "HK": (5, 7, 10, 12, 15, 20, 30),
+    "AT": (5, 7, 10, 12, 15, 20, 30),
+    "WW_109": (7, 10, 15, 20, 30),
+    "IE": (5, 7, 10, 12, 15, 20, 30),
+    "MP": (5, 7, 10, 12, 15, 20, 30),
 }
-DEFAULT_STORE_FRONT_5GB_DAYS = (5, 6, 7, 10, 12, 15, 20, 30)
+DEFAULT_STORE_FRONT_5GB_DAYS = (5, 7, 10, 12, 15, 20, 30)
 
 
 def storefront_visible_product(product, country_code=None):
@@ -309,7 +351,15 @@ def catalog_for_country(country_code):
             "reference_currency": local_reference_currency(country_code),
         })
     out.sort(key=lambda x: (x.get("duration_days") or 9999, x.get("option") or "", x.get("sku") or ""))
-    return out
+    deduped = []
+    seen_skus = set()
+    for item in out:
+        sku = item.get("sku")
+        if sku in seen_skus:
+            continue
+        seen_skus.add(sku)
+        deduped.append(item)
+    return deduped
 
 
 def choose_product(country_code="CN", duration=5, option="unlimited", data_amount=None, data_unit=None, sku=None):
