@@ -161,6 +161,8 @@ DEFAULT_COUPON = "CHÊ與與0000"
 STRIPE_PK = os.environ.get("STRIPE_PK", "pk_live_51Q0bMX04hq3VBaM2sAACNjMSrQJIqvm7ZmECsAPvV181K2OmjolRlSM0vWFMGoLtA0ZL52BYbZf39ioGYcZndUr800WD7D6cZf")
 PAYPAL_CLIENT_ID = os.environ.get("PAYPAL_CLIENT_ID", "AYM4Jau5hc-pCYrl-ChTmv8fjHtOI6rTGdxVZrDg_INcVfnvxxih982SrPZ3_oygYzASXP_-Euz6PGZp")
 TOKENS = {}
+EMAIL_ELIGIBILITY_CACHE = {}
+EMAIL_ELIGIBILITY_CACHE_TTL = 86400
 TOKEN_TTL = 1800
 
 
@@ -184,6 +186,28 @@ def cleanup_tokens():
     for k in list(TOKENS.keys()):
         if TOKENS[k].get("expires", 0) < now:
             TOKENS.pop(k, None)
+    for k in list(EMAIL_ELIGIBILITY_CACHE.keys()):
+        if EMAIL_ELIGIBILITY_CACHE[k].get("expires", 0) < now:
+            EMAIL_ELIGIBILITY_CACHE.pop(k, None)
+
+
+def normalize_email(email):
+    return (email or "").strip().lower()
+
+
+def eligibility_cache_key(order_id, email):
+    return normalize_email(email)
+
+
+def remember_email_ineligible(order_id, email, reason="该优惠券仅在首次购买时可用。"):
+    if email:
+        EMAIL_ELIGIBILITY_CACHE[eligibility_cache_key(order_id, email)] = {"expires": time.time() + EMAIL_ELIGIBILITY_CACHE_TTL, "reason": reason}
+
+
+def cached_email_ineligible(order_id, email):
+    cleanup_tokens()
+    item = EMAIL_ELIGIBILITY_CACHE.get(eligibility_cache_key(order_id, email))
+    return item.get("reason") if item else None
 
 
 def encode_payload(data):
@@ -451,7 +475,20 @@ def update_recipient_email(sess, headers, order_id, email, subscribe=False):
     r = sess.patch(f"{STORE}/v2/checkout/{order_id}", json=payload, headers=headers, timeout=30)
     if r.status_code >= 400:
         raise RuntimeError(f"update recipient email failed: {api_error(r)}")
-    return r.json().get("order")
+    data = r.json()
+    order = data.get("order") if isinstance(data, dict) else None
+    msg_blob = json.dumps(data, ensure_ascii=False).lower()
+    coupon_blob = json.dumps((order or {}).get("coupons") or data.get("coupons") or data, ensure_ascii=False).lower() if isinstance(data, dict) else msg_blob
+    if (
+        "first" in msg_blob
+        or "首次" in msg_blob
+        or "used" in msg_blob and "coupon" in msg_blob
+        or "not applicable" in msg_blob
+        or "invalid" in msg_blob and "coupon" in msg_blob
+        or "coupon" in coupon_blob and ("removed" in coupon_blob or "invalid" in coupon_blob or "not" in coupon_blob)
+    ):
+        raise RuntimeError("该优惠券仅在首次购买时可用。")
+    return order
 
 
 def get_order(sess, headers, order_id):
@@ -641,12 +678,55 @@ def pay_html(data):
 <body><div class=wrap>
 <div class=card><h2>{title}</h2><p class=muted>{fup_text} · SKU {sku}</p>
 <div class=row><span>优惠券</span><b>{safe_coupon}</b></div><div class=row><span>应付</span><b>{safe_amount}</b></div><div id=status class="muted">正在加载银行卡支付组件...</div></div>
-<div class=card><form id=pay-form><label>接收 eSIM 的邮箱</label><div class="tip"><b>邮箱提示：</b>请保证使用未购买过的邮箱，否则可能会移除优惠券，被反薅。未使用的 eSIM 通常可无理由退款，具体以 Superalink 官方规则为准。</div><input id=email type=email autocomplete=email placeholder="you@example.com" required><div id="wallet-status" class="muted">正在检测 Apple Pay / Google Pay / Link...</div><div id="express-element"></div><div id="paypal-status" class="muted">正在加载 PayPal...</div><div id="paypal-buttons"></div><button id="paypal-fallback" type="button" class="paypal-fallback">PayPal 支付 {safe_amount}</button><div id="payment-element"></div><button id=submit disabled>银行卡 / 钱包支付 {safe_amount}</button><div id=message class=err></div></form><p class=muted>已尽量启用：银行卡、Apple Pay、Google Pay、Link、PayPal。Apple/Google Pay 是否显示取决于用户设备、浏览器和钱包环境。</p><p class=muted>如果自建支付失败，可点这里回退到原生代理页：<a id="native-link" href="#">打开原生页</a></p></div>
+<div class=card><form id=pay-form><label>发送 eSIM 至</label><div class="tip"><b>邮箱提示：</b>请保证使用未购买过的邮箱，否则可能会移除优惠券，被反薅。未使用的 eSIM 通常可无理由退款，具体以 Superalink 官方规则为准。没有新邮箱？可使用 <a href="https://onlypast.com/" target="_blank" rel="noopener noreferrer">OnlyPast 自建邮箱</a>。</div><input id=email type=email autocomplete=email placeholder="you@example.com" required><div id="email-status" class="muted">输入邮箱后会先按 Superalink 官方接口校验优惠券是否仍可用。</div><div id="wallet-status" class="muted">正在检测 Apple Pay / Google Pay / Link...</div><div id="express-element"></div><div id="paypal-status" class="muted">正在加载 PayPal...</div><div id="paypal-buttons"></div><button id="paypal-fallback" type="button" class="paypal-fallback">PayPal 支付 {safe_amount}</button><div id="payment-element"></div><button id=submit disabled>银行卡 / 钱包支付 {safe_amount}</button><div id=message class=err></div></form><p class=muted>已尽量启用：银行卡、Apple Pay、Google Pay、Link、PayPal。Apple/Google Pay 是否显示取决于用户设备、浏览器和钱包环境。</p><p class=muted>如果自建支付失败，可点这里回退到原生代理页：<a id="native-link" href="#">打开原生页</a></p></div>
 </div><script>
 const DATA={json.dumps(data, ensure_ascii=False)};
 document.getElementById('native-link').href='/go?t='+encodeURIComponent(DATA.token);
 const stripe=Stripe({json.dumps(STRIPE_PK)});
 let elements;
+let emailCheckTimer=null;
+let emailCheckSeq=0;
+let lastEmailCheck={{email:'',ok:false}};
+function friendlyEmailError(msg){{
+  msg=String(msg||'邮箱校验失败');
+  if(msg.includes('首次购买')||msg.toLowerCase().includes('first')) return '该优惠券仅在首次购买时可用，请更换未购买过的邮箱。';
+  return msg;
+}}
+function setEmailState(ok,msg){{
+  const input=document.getElementById('email'), st=document.getElementById('email-status');
+  input.classList.toggle('invalid', !ok && !!msg);
+  st.className=ok?'ok':(msg?'err':'muted');
+  st.textContent=msg||'输入邮箱后会先按 Superalink 官方接口校验优惠券是否仍可用。';
+}}
+async function validateEmailNow(){{
+  const input=document.getElementById('email');
+  const email=input.value.trim().toLowerCase();
+  const seq=++emailCheckSeq;
+  if(!email){{lastEmailCheck={{email:'',ok:false}}; setEmailState(false,''); return false;}}
+  if(lastEmailCheck.email===email && lastEmailCheck.ok) return true;
+  setEmailState(false,'正在校验邮箱是否可用...');
+  const r=await fetch('/api/check-email',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{t:DATA.token,email}})}}).then(r=>r.json());
+  const current=input.value.trim().toLowerCase();
+  if(seq!==emailCheckSeq || current!==email) return false;
+  if(!r.ok){{
+    const msg=friendlyEmailError(r.error);
+    lastEmailCheck={{email,ok:false}};
+    setEmailState(false,msg);
+    return false;
+  }}
+  lastEmailCheck={{email,ok:true}};
+  setEmailState(true,'邮箱可用，优惠券仍可用。');
+  return true;
+}}
+function scheduleEmailCheck(){{
+  clearTimeout(emailCheckTimer);
+  emailCheckSeq++;
+  lastEmailCheck={{email:'',ok:false}};
+  setEmailState(false,'');
+  const email=document.getElementById('email').value.trim();
+  if(!email) return;
+  emailCheckTimer=setTimeout(()=>validateEmailNow().catch(e=>setEmailState(false,friendlyEmailError(e.message||e))),650);
+}}
 function minorAmount(display,currency){{let n=parseFloat(String(display||'25').replace(/[^0-9.]/g,''));return ['jpy','krw'].includes(String(currency).toLowerCase())?Math.round(n):Math.round(n*100);}}
 async function init(){{try{{
   if(!DATA.client_secret) throw new Error('缺少 Stripe client_secret');
@@ -673,6 +753,7 @@ async function init(){{try{{
 async function runStripeConfirm(){{
   const email=document.getElementById('email').value.trim();
   if(!email) throw new Error('请先填写接收 eSIM 的邮箱');
+  if(!await validateEmailNow()) throw new Error('请更换未购买过的邮箱后再付款');
   const pre=await fetch('/api/prepay',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{t:DATA.token,email,method:'stripe'}})}}).then(r=>r.json());
   if(!pre.ok) throw new Error(pre.error||'prepay failed');
   const ret=location.origin+'/api/stripe-callback'+pre.callback;
@@ -695,6 +776,7 @@ async function startPaypalFallback(){{
   const btn=document.getElementById('paypal-fallback');
   const email=document.getElementById('email').value.trim();
   if(!email){{document.getElementById('message').textContent='请先填写接收 eSIM 的邮箱';return;}}
+  if(!await validateEmailNow()){{document.getElementById('message').textContent='请更换未购买过的邮箱后再付款';return;}}
   btn.disabled=true;document.getElementById('message').textContent='正在创建 PayPal 订单...';
   try{{
     const r=await fetch('/api/paypal/create',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{t:DATA.token,email}})}}).then(r=>r.json());
@@ -707,12 +789,14 @@ async function setupPaypal(){{const st=document.getElementById('paypal-status');
   st.innerHTML='<span class=ok>PayPal 已加载，可直接点击 PayPal 按钮</span>';
   paypal.Buttons({{
     style:{{layout:'vertical',color:'gold',shape:'rect',label:'paypal'}},
-    createOrder:async()=>{{const email=document.getElementById('email').value.trim(); if(!email) throw new Error('请先填写接收 eSIM 的邮箱'); const r=await fetch('/api/paypal/create',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{t:DATA.token,email}})}}).then(r=>r.json()); if(!r.ok) throw new Error(r.error||'paypal create failed'); return r.paypal_order_id;}},
+    createOrder:async()=>{{const email=document.getElementById('email').value.trim(); if(!email) throw new Error('请先填写接收 eSIM 的邮箱'); if(!await validateEmailNow()) throw new Error('请更换未购买过的邮箱后再付款'); const r=await fetch('/api/paypal/create',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{t:DATA.token,email}})}}).then(r=>r.json()); if(!r.ok) throw new Error(r.error||'paypal create failed'); return r.paypal_order_id;}},
     onApprove:async(data)=>{{const r=await fetch('/api/paypal/capture',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{t:DATA.token,paypal_order_id:data.orderID}})}}).then(r=>r.json()); if(r.ok) location.href='/api/stripe-callback?paymentMethod=paypal&session='+encodeURIComponent(DATA.cookie_value||''); else document.getElementById('message').textContent=r.error||'PayPal capture failed';}},
     onError:(err)=>{{document.getElementById('message').textContent='PayPal 错误：'+(err.message||err)}}
   }}).render('#paypal-buttons');
 }}catch(e){{st.className='err';st.textContent='PayPal 按钮加载失败：'+(e.message||e)+'。下方黄色 PayPal 按钮会尝试先创建官方 PayPal 订单；若仍无弹窗，多半是当前网络拦截 paypal.com。';console.warn('paypal unavailable',e)}}}}
 document.getElementById('paypal-fallback').addEventListener('click',startPaypalFallback);
+document.getElementById('email').addEventListener('input',scheduleEmailCheck);
+document.getElementById('email').addEventListener('blur',()=>validateEmailNow().catch(e=>setEmailState(false,friendlyEmailError(e.message||e))));
 document.getElementById('pay-form').addEventListener('submit',async(e)=>{{e.preventDefault();const btn=document.getElementById('submit');btn.disabled=true;document.getElementById('message').textContent='正在补齐订单信息并进入付款...';try{{
   await runStripeConfirm();
 }}catch(err){{document.getElementById('message').textContent=err.message;btn.disabled=false;}}}});
@@ -1025,6 +1109,36 @@ location.replace({json.dumps(target)});
 
     def do_POST(self):
         parsed = urlparse(self.path)
+        if parsed.path == "/api/check-email":
+            n = int(self.headers.get("Content-Length", "0") or 0)
+            body = self.rfile.read(n) if n else b"{}"
+            try:
+                params = json.loads(body.decode() or "{}")
+                data = load_token(params.get("t", ""))
+                order_id = data["order_id"]
+                sid = data["cookie_value"]
+                email = normalize_email(params.get("email") or "")
+                if not email:
+                    raise RuntimeError("请先填写接收 eSIM 的邮箱")
+                cached_reason = cached_email_ineligible(order_id, email)
+                if cached_reason:
+                    raise RuntimeError(cached_reason)
+                sess = requests.Session()
+                headers = page_headers(DEFAULT_URL, DEFAULT_LOCALE)
+                bind_session_cookies(sess, sid, DEFAULT_LOCALE)
+                try:
+                    update_recipient_email(sess, headers, order_id, email, subscribe=False)
+                except Exception as err:
+                    reason = str(err)
+                    if "首次购买" in reason or "first" in reason.lower():
+                        remember_email_ineligible(order_id, email, "该优惠券仅在首次购买时可用。")
+                        reason = "该优惠券仅在首次购买时可用。"
+                    raise RuntimeError(reason)
+                data["email"] = email
+                self.send_json({"ok": True, "message": "邮箱可用，优惠券仍可用。"})
+            except Exception as e:
+                self.send_json({"ok": False, "error": str(e)}, 400)
+            return
         if parsed.path == "/api/paypal/create":
             n = int(self.headers.get("Content-Length", "0") or 0)
             body = self.rfile.read(n) if n else b"{}"
@@ -1037,8 +1151,18 @@ location.replace({json.dumps(target)});
                 headers = page_headers(DEFAULT_URL, DEFAULT_LOCALE)
                 bind_session_cookies(sess, sid, DEFAULT_LOCALE)
                 order = get_order(sess, headers, order_id)
-                email = (params.get("email") or "").strip()
-                order = update_recipient_email(sess, headers, order_id, email, subscribe=False) or order
+                email = normalize_email(params.get("email") or "")
+                cached_reason = cached_email_ineligible(order_id, email)
+                if cached_reason:
+                    raise RuntimeError(cached_reason)
+                try:
+                    order = update_recipient_email(sess, headers, order_id, email, subscribe=False) or order
+                except Exception as err:
+                    reason = str(err)
+                    if "首次购买" in reason or "first" in reason.lower():
+                        remember_email_ineligible(order_id, email, "该优惠券仅在首次购买时可用。")
+                        reason = "该优惠券仅在首次购买时可用。"
+                    raise RuntimeError(reason)
                 pi = make_paypal_intent(sess, headers, order_id)
                 cap = authorize_capture(sess, headers, order_id, pi.get("id"))
                 data["paypal_intent_id"] = pi.get("id")
@@ -1082,8 +1206,18 @@ location.replace({json.dumps(target)});
                 headers = page_headers(DEFAULT_URL, DEFAULT_LOCALE)
                 bind_session_cookies(sess, sid, DEFAULT_LOCALE)
                 order = get_order(sess, headers, order_id)
-                email = (params.get("email") or "").strip()
-                order = update_recipient_email(sess, headers, order_id, email, subscribe=False) or order
+                email = normalize_email(params.get("email") or "")
+                cached_reason = cached_email_ineligible(order_id, email)
+                if cached_reason:
+                    raise RuntimeError(cached_reason)
+                try:
+                    order = update_recipient_email(sess, headers, order_id, email, subscribe=False) or order
+                except Exception as err:
+                    reason = str(err)
+                    if "首次购买" in reason or "first" in reason.lower():
+                        remember_email_ineligible(order_id, email, "该优惠券仅在首次购买时可用。")
+                        reason = "该优惠券仅在首次购买时可用。"
+                    raise RuntimeError(reason)
                 cap = authorize_capture(sess, headers, order_id, data.get("stripe_intent_id"))
                 cb = callback_query("stripe", sid)
                 self.send_json({"ok": True, "pre_capture": cap.get("ok"), "pre_capture_error": None if cap.get("ok") else cap.get("error"), "callback": cb, "amount": data.get("amount"), "coupon": data.get("coupon")})
